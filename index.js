@@ -142,56 +142,108 @@ function startPeriodicSummary() {
 }
 
 // ─── Comandos do dono via WhatsApp ────────────────────────────────────────────
+// Usa message_create para capturar mensagens enviadas pelo próprio dono
 
-client.on('message', async (message) => {
+client.on('message_create', async (message) => {
   if (!message.fromMe) return;
 
   const body = message.body.trim().toLowerCase();
 
   if (body === '!resumo') {
-    const messages = missedBuffer.getAll();
-    if (messages.length === 0) {
-      await message.reply('Nenhuma mensagem nova desde o último resumo.');
-      return;
+    try {
+      const messages = missedBuffer.getAll();
+      if (messages.length === 0) {
+        await client.sendMessage(message.to, 'Nenhuma mensagem nova desde o último resumo.');
+        return;
+      }
+      const summary = await summarizeMessages(messages);
+      await client.sendMessage(message.to,
+        `📋 *${messages.length} mensagens:*\n\n${summary}`
+      );
+      missedBuffer.clear();
+    } catch (err) {
+      logSystem(`Erro no !resumo: ${err.message}`, 'error');
     }
-    const summary = await summarizeMessages(messages);
-    await message.reply(
-      `📋 *${messages.length} mensagens:*\n\n${summary}`
-    );
-    missedBuffer.clear();
   }
 
   if (body === '!urgentes') {
-    const urgent = missedBuffer.getUrgent();
-    if (urgent.length === 0) {
-      await message.reply('Nenhuma mensagem urgente.');
-    } else {
-      const list = urgent
-        .map((m) => `• [${m.time}] ${m.from.replace('@c.us', '')}: ${m.body}`)
-        .join('\n');
-      await message.reply(`🚨 *${urgent.length} urgentes:*\n\n${list}`);
+    try {
+      const urgent = missedBuffer.getUrgent();
+      if (urgent.length === 0) {
+        await client.sendMessage(message.to, 'Nenhuma mensagem urgente.');
+      } else {
+        const list = urgent
+          .map((m) => `• [${m.time}] ${m.from.replace('@c.us', '')}: ${m.body}`)
+          .join('\n');
+        await client.sendMessage(message.to, `🚨 *${urgent.length} urgentes:*\n\n${list}`);
+      }
+    } catch (err) {
+      logSystem(`Erro no !urgentes: ${err.message}`, 'error');
     }
   }
 
   if (body === '!status') {
-    const total = missedBuffer.count();
-    const urgent = missedBuffer.getUrgent().length;
-    await message.reply(
-      `✅ *Agente ativo*\n` +
-      `📩 Msgs no buffer: ${total}\n` +
-      `🚨 Urgentes: ${urgent}\n` +
-      `🤖 Auto-reply: ${AUTO_REPLY ? 'ON' : 'OFF'}`
-    );
+    try {
+      const total = missedBuffer.count();
+      const urgent = missedBuffer.getUrgent().length;
+      await client.sendMessage(message.to,
+        `✅ *Agente ativo*\n` +
+        `📩 Msgs no buffer: ${total}\n` +
+        `🚨 Urgentes: ${urgent}\n` +
+        `🤖 Auto-reply: ${AUTO_REPLY ? 'ON' : 'OFF'}`
+      );
+    } catch (err) {
+      logSystem(`Erro no !status: ${err.message}`, 'error');
+    }
+  }
+
+  if (body === '!pendencias') {
+    try {
+      await client.sendMessage(message.to, '🔍 Analisando seus últimos 10 contatos, aguarde...');
+      const chats = await client.getChats();
+
+      // Pega os 10 chats mais recentes (exclui grupos e status)
+      const recentChats = chats
+        .filter((c) => !c.isGroup && c.name !== 'Status')
+        .slice(0, 10);
+
+      const chatSummaries = [];
+
+      for (const chat of recentChats) {
+        const msgs = await chat.fetchMessages({ limit: 10 });
+        if (msgs.length === 0) continue;
+
+        const lines = msgs.map((m) => {
+          const who = m.fromMe ? 'Você' : chat.name;
+          return `${who}: ${m.body}`;
+        }).join('\n');
+
+        chatSummaries.push({ name: chat.name, messages: lines, unread: chat.unreadCount });
+      }
+
+      const { analyzePendingChats } = require('./src/claude');
+      const analysis = await analyzePendingChats(chatSummaries);
+
+      await client.sendMessage(message.to, `📊 *PENDÊNCIAS - últimos 10 contatos:*\n\n${analysis}`);
+    } catch (err) {
+      logSystem(`Erro no !pendencias: ${err.message}`, 'error');
+      await client.sendMessage(message.to, 'Erro ao analisar pendências. Tente novamente.');
+    }
   }
 
   if (body === '!ajuda') {
-    await message.reply(
-      `*Comandos disponíveis:*\n` +
-      `!resumo — Resumo de todas as mensagens\n` +
-      `!urgentes — Ver mensagens urgentes\n` +
-      `!status — Status do agente\n` +
-      `!ajuda — Esta mensagem`
-    );
+    try {
+      await client.sendMessage(message.to,
+        `*Comandos disponíveis:*\n` +
+        `!resumo — Resumo das mensagens recebidas\n` +
+        `!urgentes — Ver mensagens urgentes\n` +
+        `!pendencias — Analisa os 10 últimos contatos por pendências de trabalho\n` +
+        `!status — Status do agente\n` +
+        `!ajuda — Esta mensagem`
+      );
+    } catch (err) {
+      logSystem(`Erro no !ajuda: ${err.message}`, 'error');
+    }
   }
 });
 

@@ -48,4 +48,23 @@ async function summarizeMessages(messages) {
   return response.content[0].text;
 }
 
-module.exports = { askClaude, summarizeMessages };
+async function analyzePendingChats(chatSummaries) {
+  const content = chatSummaries.map((c) =>
+    `--- Conversa com: ${c.name} (${c.unread} não lidas) ---\n${c.messages}`
+  ).join('\n\n');
+
+  const response = await client.messages.create({
+    model: 'claude-sonnet-4-6',
+    max_tokens: 800,
+    messages: [
+      {
+        role: 'user',
+        content: `Analise as conversas abaixo e identifique pendências de trabalho, respostas em aberto, tarefas combinadas ou qualquer coisa que eu precise resolver. Seja direto e objetivo, use bullet points por contato. Se não houver pendência, diga claramente.\n\n${content}`
+      }
+    ]
+  });
+
+  return response.content[0].text;
+}
+
+module.exports = { askClaude, summarizeMessages, analyzePendingChats };
