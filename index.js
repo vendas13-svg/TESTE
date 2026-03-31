@@ -66,6 +66,10 @@ client.on('message', async (message) => {
     if (message.fromMe || message.isStatus) return;
 
     const classification = classifyMessage(message);
+
+    // Ignora grupos no painel (não loga nem adiciona ao buffer)
+    if (classification.isGroup) return;
+
     logMessage(message, classification);
 
     // Adiciona ao buffer de mensagens perdidas
